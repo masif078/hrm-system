@@ -39,7 +39,20 @@ class AttendanceController extends Controller
             ->whereDate('date', today())
             ->first();
 
-        return view('attendance.index', compact('attendances', 'todayAttendance'));
+        $baseQuery = Attendance::where('employee_id', $employee->id);
+        $presentCount = (clone $baseQuery)->where('status', 'Present')->count();
+        $absentCount = (clone $baseQuery)->where('status', 'Absent')->count();
+        $lateCount = (clone $baseQuery)->where('status', 'Late')->count();
+        $todayAttendanceCount = (clone $baseQuery)->whereDate('date', today())->count();
+
+        return view('attendance.index', compact(
+            'attendances',
+            'todayAttendance',
+            'presentCount',
+            'absentCount',
+            'lateCount',
+            'todayAttendanceCount'
+        ));
     }
 
     public function checkIn()
@@ -176,7 +189,18 @@ class AttendanceController extends Controller
             ->paginate(10)
             ->withQueryString();
 
-        return view('attendance.index', compact('attendances'));
+        $presentCount = Attendance::where('status', 'Present')->count();
+        $absentCount = Attendance::where('status', 'Absent')->count();
+        $lateCount = Attendance::where('status', 'Late')->count();
+        $todayAttendanceCount = Attendance::whereDate('date', today())->count();
+
+        return view('attendance.index', compact(
+            'attendances',
+            'presentCount',
+            'absentCount',
+            'lateCount',
+            'todayAttendanceCount'
+        ));
     }
 
     public function create()

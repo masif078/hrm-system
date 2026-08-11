@@ -37,18 +37,33 @@ class LeaveAppliedNotification extends Notification implements ShouldQueue
      */
     public function toMail(object $notifiable): MailMessage
     {
-        $employeeName = $this->leave->employee->first_name . ' ' . $this->leave->employee->last_name;
+        $employeeName = $this->leave->employee ? ($this->leave->employee->first_name . ' ' . $this->leave->employee->last_name) : 'Employee';
+
+        if (isset($notifiable->role) && $notifiable->role === 'admin') {
+            return (new MailMessage)
+                ->subject('New Leave Application - ' . $employeeName)
+                ->greeting('Hello Admin,')
+                ->line($employeeName . ' has submitted a new leave application.')
+                ->line('Leave Details:')
+                ->line('• Employee: ' . $employeeName)
+                ->line('• Type: ' . $this->leave->leave_type)
+                ->line('• Duration: ' . $this->leave->start_date . ' to ' . $this->leave->end_date)
+                ->line('• Reason: ' . ($this->leave->reason ?: 'No reason provided'))
+                ->action('Review Leave Application', url('/leaves'))
+                ->line('Thank you for using our HRM System!');
+        }
 
         return (new MailMessage)
-            ->subject('New Leave Application - ' . $employeeName)
-            ->greeting('Hello Admin,')
-            ->line($employeeName . ' has applied for a leave.')
+            ->subject('Leave Application Submitted - ' . $this->leave->leave_type)
+            ->greeting('Hello ' . $notifiable->name . ',')
+            ->line('Your leave application has been submitted successfully and is pending admin review.')
             ->line('Leave Details:')
-            ->line('• Type: ' . $this->leave->leave_type)
+            ->line('• Leave Type: ' . $this->leave->leave_type)
             ->line('• Duration: ' . $this->leave->start_date . ' to ' . $this->leave->end_date)
+            ->line('• Status: Pending')
             ->line('• Reason: ' . ($this->leave->reason ?: 'No reason provided'))
-            ->action('Review Leave Application', url('/leaves'))
-            ->line('Thank you for using our HRM System!');
+            ->action('View My Leaves', url('/employee/leaves'))
+            ->line('We will notify you once your leave request is reviewed.');
     }
 
     /**

@@ -68,13 +68,17 @@ class LeaveController extends Controller
         $endDate = \Carbon\Carbon::parse($validated['end_date']);
         $requestedDays = $startDate->diffInDays($endDate) + 1;
 
-        $balance = LeaveBalance::where('employee_id', $employee->id)
-            ->where('leave_type', $validated['leave_type'])
-            ->first();
-
-        if (!$balance) {
-            return redirect()->back()->withInput()->with('error', 'No leave balance allocated for ' . $validated['leave_type'] . '. Please contact admin.');
-        }
+        // Auto allocate 14 days default leave balance if not initialized
+        $balance = LeaveBalance::firstOrCreate(
+            [
+                'employee_id' => $employee->id,
+                'leave_type'  => $validated['leave_type'],
+            ],
+            [
+                'allocated'   => 14,
+                'used'        => 0,
+            ]
+        );
 
         $remaining = $balance->allocated - $balance->used;
         if ($requestedDays > $remaining) {
@@ -83,11 +87,27 @@ class LeaveController extends Controller
 
         $leave = Leave::create($validated);
         
-        // Notify Admin users
+        // 1. Notify Admin users via email
         $admins = \App\Models\User::where('role', 'admin')->get();
-        \Illuminate\Support\Facades\Notification::send($admins, new \App\Notifications\LeaveAppliedNotification($leave));
+        if ($admins->count() > 0) {
+            try {
+                \Illuminate\Support\Facades\Notification::send($admins, new \App\Notifications\LeaveAppliedNotification($leave));
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('Mail error notifying admin on leave apply: ' . $e->getMessage());
+            }
+        }
 
-        return redirect()->route('employee.leaves.index')->with('success', 'Leave request submitted.');
+        // 2. Notify Employee via confirmation email
+        $employeeUser = auth()->user();
+        if ($employeeUser && $employeeUser->email) {
+            try {
+                $employeeUser->notify(new \App\Notifications\LeaveAppliedNotification($leave));
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('Mail error notifying employee on leave apply: ' . $e->getMessage());
+            }
+        }
+
+        return redirect()->route('employee.leaves.index')->with('success', 'Leave request submitted successfully and notification email sent.');
     }
 
     public function index(Request $request)

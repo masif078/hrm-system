@@ -32,8 +32,12 @@
                     <label class="form-label">Employee</label>
 
                     @if(auth()->user()->role === 'employee')
-                        <input type="hidden" name="employee_id" value="{{ auth()->user()->employee->id }}">
-                        <input type="text" class="form-control" value="{{ auth()->user()->employee->first_name }} {{ auth()->user()->employee->last_name }}" disabled>
+                        @if(auth()->user()->employee)
+                            <input type="hidden" name="employee_id" value="{{ auth()->user()->employee->id }}">
+                            <input type="text" class="form-control" value="{{ auth()->user()->employee->first_name }} {{ auth()->user()->employee->last_name }}" disabled>
+                        @else
+                            <div class="alert alert-warning mb-0">No employee profile linked to your user account. Please contact admin to link your profile.</div>
+                        @endif
                     @else
                     <select name="employee_id" class="form-select" required>
 
