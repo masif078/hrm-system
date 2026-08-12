@@ -100,10 +100,36 @@ class SettingController extends Controller
         return view('settings.login-history', compact('logs'));
     }
 
-    public function activityLogs()
+    public function activityLogs(Request $request)
     {
-        $logs = ActivityLog::with('user')->latest()->get();
-        return view('settings.activity-logs', compact('logs'));
+        $query = ActivityLog::with('user')->latest();
+
+        if ($request->filled('user_id')) {
+            $query->where('user_id', $request->user_id);
+        }
+
+        if ($request->filled('action')) {
+            $query->where('action', $request->action);
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('details', 'like', "%{$search}%")
+                  ->orWhere('action', 'like', "%{$search}%")
+                  ->orWhere('ip', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('date')) {
+            $query->whereDate('created_at', $request->date);
+        }
+
+        $logs = $query->get();
+        $users = User::orderBy('name')->get();
+        $actions = ActivityLog::select('action')->distinct()->pluck('action');
+
+        return view('settings.activity-logs', compact('logs', 'users', 'actions'));
     }
 
     public function permissionMatrix()

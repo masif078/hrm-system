@@ -13,8 +13,10 @@ class InterviewController extends Controller
 {
     public function index()
     {
-        $interviews = Interview::with(['application.candidate', 'interviewer'])->latest()->get();
-        return view('interviews.index', compact('interviews'));
+        $interviews = Interview::with(['application.candidate', 'application.jobOpening', 'interviewer'])->latest()->get();
+        $applications = Application::with(['candidate', 'jobOpening'])->latest()->get();
+        $employees = Employee::orderBy('first_name')->get();
+        return view('interviews.index', compact('interviews', 'applications', 'employees'));
     }
 
     public function create(Request $request)
@@ -27,23 +29,54 @@ class InterviewController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
             'application_id' => 'required|exists:applications,id',
-            'date' => 'required|date',
-            'time' => 'required',
+            'date'           => 'required|date',
+            'time'           => 'required',
             'interviewer_id' => 'required|exists:employees,id',
-            'meeting_link' => 'nullable|url',
-            'notes' => 'nullable|string',
+            'meeting_link'   => 'nullable|url',
+            'notes'          => 'nullable|string',
         ]);
 
-        $interview = Interview::create($validated);
-        
-        // Auto transition application stage to Interview
-        $app = Application::find($request->application_id);
-        $app->update(['status' => 'HR Interview']);
-        $app->candidate->update(['status' => 'HR Interview']);
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
 
-        ActivityLog::log('Scheduled Interview', "Interview ID: {$interview->id} for Candidate: {$app->candidate->full_name}");
+        $validated = $validator->validated();
+        $interview = Interview::create($validated);
+
+        $app = Application::find($request->application_id);
+        if ($app) {
+            $app->update(['status' => 'HR Interview']);
+            if ($app->candidate) {
+                $app->candidate->update(['status' => 'HR Interview']);
+            }
+        }
+
+        ActivityLog::log('Scheduled Interview', "Interview ID: {$interview->id} for Candidate: " . ($app->candidate->full_name ?? 'N/A'));
+
+        $interview->load(['application.candidate', 'application.jobOpening', 'interviewer']);
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success'   => true,
+                'message'   => 'Interview scheduled successfully.',
+                'interview' => [
+                    'id'              => $interview->id,
+                    'candidate_name'  => $interview->application->candidate->full_name ?? 'N/A',
+                    'candidate_email' => $interview->application->candidate->email ?? '',
+                    'job_title'       => $interview->application->jobOpening->title ?? 'N/A',
+                    'interview_date'  => date('M d, Y', strtotime($interview->date)),
+                    'interview_time'  => date('h:i A', strtotime($interview->time)),
+                    'interviewer_name'=> $interview->interviewer ? ($interview->interviewer->first_name . ' ' . $interview->interviewer->last_name) : 'N/A',
+                    'meeting_link'    => $interview->meeting_link,
+                    'process_url'     => route('applications.show', $interview->application_id),
+                ]
+            ]);
+        }
 
         return redirect()->route('applications.show', $request->application_id)->with('success', 'Interview scheduled and candidate stage set to HR Interview.');
     }

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Designation;
 use App\Models\Department;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class DesignationController extends Controller
 {
@@ -18,20 +19,21 @@ class DesignationController extends Controller
         }
 
         $designations = $query->latest()->get();
+        $departments = Department::orderBy('name')->get();
 
-        return view('designations.index', compact('designations'));
+        return view('designations.index', compact('designations', 'departments'));
     }
 
     public function create()
     {
-        $departments = Department::all();
+        $departments = Department::orderBy('name')->get();
 
         return view('designations.create', compact('departments'));
     }
 
     public function store(Request $request)
     {
-        $request->validate([
+        $validator = Validator::make($request->all(), [
             'department_id' => 'required|exists:departments,id',
             'title' => 'required|max:100|unique:designations,title|regex:/^[a-zA-Z0-9\s]+$/',
             'description' => 'nullable',
@@ -39,11 +41,31 @@ class DesignationController extends Controller
             'title.regex' => 'The designation title may only contain letters, numbers, and spaces.',
         ]);
 
-        Designation::create([
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $designation = Designation::create([
             'department_id' => $request->department_id,
             'title' => $request->title,
             'description' => $request->description,
         ]);
+
+        $designation->load('department');
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Designation added successfully.',
+                'designation' => $designation
+            ]);
+        }
 
         return redirect()
             ->route('designations.index')
@@ -52,14 +74,14 @@ class DesignationController extends Controller
 
     public function edit(Designation $designation)
     {
-        $departments = Department::all();
+        $departments = Department::orderBy('name')->get();
 
         return view('designations.edit', compact('designation', 'departments'));
     }
 
     public function update(Request $request, Designation $designation)
     {
-        $request->validate([
+        $validator = Validator::make($request->all(), [
             'department_id' => 'required|exists:departments,id',
             'title' => 'required|max:100|unique:designations,title,' . $designation->id . '|regex:/^[a-zA-Z0-9\s]+$/',
             'description' => 'nullable',
@@ -67,11 +89,31 @@ class DesignationController extends Controller
             'title.regex' => 'The designation title may only contain letters, numbers, and spaces.',
         ]);
 
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
         $designation->update([
             'department_id' => $request->department_id,
             'title' => $request->title,
             'description' => $request->description,
         ]);
+
+        $designation->load('department');
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Designation updated successfully.',
+                'designation' => $designation
+            ]);
+        }
 
         return redirect()
             ->route('designations.index')

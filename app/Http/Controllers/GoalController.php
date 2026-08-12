@@ -33,7 +33,9 @@ class GoalController extends Controller
             }
             
             $goals = Goal::where('employee_id', $employee->id)->latest()->paginate(10);
-            return view('goals.index', compact('goals'));
+            $employees = collect([$employee]);
+            
+            return view('goals.index', compact('goals', 'employees'));
         }
     }
 
@@ -49,18 +51,27 @@ class GoalController extends Controller
         $user = auth()->user();
         
         $rules = [
-            'title' => 'required|string|max:255',
+            'title'       => 'required|string|max:255',
             'description' => 'nullable|string',
             'target_date' => 'required|date',
-            'progress' => 'required|integer|min:0|max:100',
-            'status' => 'required|string',
+            'progress'    => 'required|integer|min:0|max:100',
+            'status'      => 'required|string',
         ];
 
         if ($user->role === 'admin') {
             $rules['employee_id'] = 'required|exists:employees,id';
         }
 
-        $validated = $request->validate($rules);
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), $rules);
+
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $validated = $validator->validated();
 
         if ($user->role !== 'admin') {
             $validated['employee_id'] = $user->employee->id;
@@ -71,7 +82,27 @@ class GoalController extends Controller
             $validated['status'] = 'Completed';
         }
 
-        Goal::create($validated);
+        $goal = Goal::create($validated);
+        $goal->load('employee');
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Goal created successfully.',
+                'goal'    => [
+                    'id'            => $goal->id,
+                    'employee_name' => $goal->employee ? ($goal->employee->first_name . ' ' . $goal->employee->last_name) : 'N/A',
+                    'employee_code' => $goal->employee ? ($goal->employee->employee_id ?? 'EMP-'.$goal->employee->id) : '',
+                    'title'         => $goal->title,
+                    'description'   => $goal->description ?? '',
+                    'target_date'   => \Carbon\Carbon::parse($goal->target_date)->format('M d, Y'),
+                    'progress'      => $goal->progress,
+                    'status'        => $goal->status,
+                    'edit_url'      => route('goals.edit', $goal->id),
+                    'destroy_url'   => route('goals.destroy', $goal->id),
+                ]
+            ]);
+        }
 
         return redirect()->route('goals.index')->with('success', 'Goal created successfully.');
     }

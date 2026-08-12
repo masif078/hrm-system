@@ -40,8 +40,13 @@ class PayrollController extends Controller
         }
 
         $payrolls = $query->latest()->paginate(10);
+        $departments = \App\Models\Department::orderBy('name')->get();
+        $employees = Employee::where('status', 'active')
+            ->with('department', 'designation', 'activeSalaryStructure')
+            ->orderBy('first_name')
+            ->get();
 
-        return view('payrolls.index', compact('payrolls'));
+        return view('payrolls.index', compact('payrolls', 'departments', 'employees'));
     }
 
     /**
@@ -60,45 +65,70 @@ class PayrollController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'month' => 'required|integer|between:1,12',
-            'year' => 'required|integer|min:2020|max:' . (date('Y') + 1),
-            'employee_id' => 'nullable|exists:employees,id',
-            'remarks' => 'nullable|string',
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'month'         => 'required|integer|between:1,12',
+            'year'          => 'required|integer|min:2020|max:' . (date('Y') + 1),
+            'department_id' => 'nullable',
+            'employee_id'   => 'nullable|exists:employees,id',
+            'remarks'       => 'nullable|string',
         ]);
 
-        $month = $validated['month'];
-        $year = $validated['year'];
-        $remarks = $validated['remarks'] ?? null;
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
 
-        // If single employee specified
+        $month = $request->month;
+        $year = $request->year;
+        $deptId = $request->department_id;
+        $remarks = $request->remarks ?? null;
+
+        // Single Employee specified
         if ($request->filled('employee_id')) {
             $employee = Employee::with('activeSalaryStructure')->findOrFail($request->employee_id);
             
-            // Check duplicate
             $exists = Payroll::where('employee_id', $employee->id)
                 ->where('month', $month)
                 ->where('year', $year)
                 ->exists();
 
             if ($exists) {
+                if ($request->ajax() || $request->wantsJson()) {
+                    return response()->json(['success' => false, 'errors' => ['employee_id' => ["Payroll already exists for this employee for {$month}/{$year}."]]], 422);
+                }
                 return back()->withErrors(['employee_id' => "Payroll already exists for this employee for {$month}/{$year}."])->withInput();
             }
 
             if (!$employee->activeSalaryStructure) {
+                if ($request->ajax() || $request->wantsJson()) {
+                    return response()->json(['success' => false, 'errors' => ['employee_id' => ["Employee does not have an active salary structure."]]], 422);
+                }
                 return back()->withErrors(['employee_id' => "Employee does not have an active salary structure."])->withInput();
             }
 
             $this->generatePayrollRecord($employee, $month, $year, $remarks);
             
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Payroll generated successfully for ' . $employee->first_name . ' ' . $employee->last_name
+                ]);
+            }
+
             return redirect()->route('payrolls.index')
                 ->with('success', 'Payroll generated successfully for ' . $employee->first_name . ' ' . $employee->last_name);
         }
 
-        // Bulk generation for all active employees with active structures
-        $employees = Employee::where('status', 'active')
-            ->with('activeSalaryStructure')
-            ->get();
+        // Bulk generation for active employees
+        $empQuery = Employee::where('status', 'active')->with('activeSalaryStructure');
+
+        if (!empty($deptId) && $deptId !== 'all') {
+            $empQuery->where('department_id', $deptId);
+        }
+
+        $employees = $empQuery->get();
 
         $generatedCount = 0;
         $skippedCount = 0;
@@ -109,7 +139,6 @@ class PayrollController extends Controller
                 continue;
             }
 
-            // Check duplicate
             $exists = Payroll::where('employee_id', $employee->id)
                 ->where('month', $month)
                 ->where('year', $year)
@@ -122,6 +151,15 @@ class PayrollController extends Controller
 
             $this->generatePayrollRecord($employee, $month, $year, $remarks);
             $generatedCount++;
+        }
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success'         => true,
+                'message'         => "Payroll generation complete. Generated: {$generatedCount}, Skipped/Duplicates: {$skippedCount}.",
+                'generated_count' => $generatedCount,
+                'skipped_count'   => $skippedCount,
+            ]);
         }
 
         return redirect()->route('payrolls.index')

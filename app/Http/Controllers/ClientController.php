@@ -10,8 +10,9 @@ class ClientController extends Controller
     public function index()
     {
         $clients = Client::latest()->paginate(10);
+        $users = \App\Models\User::where('role', 'client')->get();
 
-        return view('clients.index', compact('clients'));
+        return view('clients.index', compact('clients', 'users'));
     }
 
     public function create()
@@ -22,7 +23,7 @@ class ClientController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
             'company_name'   => 'required|max:255',
             'contact_person' => 'required|max:255',
             'email'          => 'required|email|unique:clients,email',
@@ -31,7 +32,22 @@ class ClientController extends Controller
             'user_id'        => 'nullable|exists:users,id',
         ]);
 
-        Client::create($request->all());
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $client = Client::create($validator->validated());
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Client created successfully.',
+                'client'  => $client
+            ]);
+        }
 
         return redirect()->route('clients.index')->with('success', 'Client created successfully.');
     }

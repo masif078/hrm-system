@@ -194,12 +194,15 @@ class AttendanceController extends Controller
         $lateCount = Attendance::where('status', 'Late')->count();
         $todayAttendanceCount = Attendance::whereDate('date', today())->count();
 
+        $employees = Employee::orderBy('first_name')->get();
+
         return view('attendance.index', compact(
             'attendances',
             'presentCount',
             'absentCount',
             'lateCount',
-            'todayAttendanceCount'
+            'todayAttendanceCount',
+            'employees'
         ));
     }
 
@@ -220,7 +223,7 @@ class AttendanceController extends Controller
             abort(403, 'Unauthorized Access.');
         }
 
-        $request->validate([
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
             'employee_id' => 'required|exists:employees,id',
             'date'        => 'required|date',
             'check_in'    => 'nullable',
@@ -228,7 +231,33 @@ class AttendanceController extends Controller
             'status'      => 'required',
         ]);
 
-        Attendance::create($request->all());
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $attendance = Attendance::create($validator->validated());
+        $attendance->load('employee');
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success'    => true,
+                'message'    => 'Attendance marked successfully.',
+                'attendance' => [
+                    'id'                  => $attendance->id,
+                    'employee_name'       => $attendance->employee->first_name . ' ' . $attendance->employee->last_name,
+                    'date'                => $attendance->date,
+                    'formatted_check_in'  => $attendance->formatted_check_in,
+                    'formatted_check_out' => $attendance->formatted_check_out,
+                    'status'              => $attendance->status,
+                    'show_url'            => route('attendances.show', $attendance),
+                    'edit_url'            => route('attendances.edit', $attendance),
+                    'destroy_url'         => route('attendances.destroy', $attendance),
+                ]
+            ]);
+        }
 
         return redirect()
                 ->route('attendances.index')

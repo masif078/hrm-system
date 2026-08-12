@@ -11,6 +11,7 @@ class PerformanceReviewController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
+        $employees = Employee::orderBy('first_name')->get();
         
         if ($user->role === 'admin') {
             $query = PerformanceReview::with(['employee', 'reviewer']);
@@ -23,7 +24,6 @@ class PerformanceReviewController extends Controller
             }
 
             $reviews = $query->latest()->paginate(10);
-            $employees = Employee::orderBy('first_name')->get();
             return view('performance-reviews.index', compact('reviews', 'employees'));
         } else {
             $employee = $user->employee;
@@ -35,7 +35,7 @@ class PerformanceReviewController extends Controller
                 ->where('employee_id', $employee->id)
                 ->latest()
                 ->paginate(10);
-            return view('performance-reviews.index', compact('reviews'));
+            return view('performance-reviews.index', compact('reviews', 'employees'));
         }
     }
 
@@ -47,21 +47,55 @@ class PerformanceReviewController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'employee_id' => 'required|exists:employees,id',
-            'review_type' => 'required|in:Monthly,Quarterly,Annual',
-            'period' => 'required|string|max:255',
-            'rating' => 'required|numeric|min:1|max:5',
-            'strengths' => 'nullable|string',
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'employee_id'  => 'required|exists:employees,id',
+            'reviewer_id'  => 'nullable|exists:employees,id',
+            'review_type'  => 'required|in:Monthly,Quarterly,Annual',
+            'period'       => 'required|string|max:255',
+            'rating'       => 'required|numeric|min:1|max:5',
+            'strengths'    => 'nullable|string',
             'improvements' => 'nullable|string',
-            'review_date' => 'required|date',
-            'status' => 'required|in:Pending,Completed',
+            'review_date'  => 'required|date',
+            'status'       => 'required|in:Pending,Completed',
         ]);
 
-        $reviewer = auth()->user()->employee;
-        $validated['reviewer_id'] = $reviewer ? $reviewer->id : null;
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
 
-        PerformanceReview::create($validated);
+        $validated = $validator->validated();
+
+        if (empty($validated['reviewer_id'])) {
+            $reviewer = auth()->user()->employee;
+            $validated['reviewer_id'] = $reviewer ? $reviewer->id : null;
+        }
+
+        $review = PerformanceReview::create($validated);
+        $review->load(['employee', 'reviewer']);
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Performance review evaluation created successfully.',
+                'review'  => [
+                    'id'            => $review->id,
+                    'employee_name' => $review->employee ? ($review->employee->first_name . ' ' . $review->employee->last_name) : 'N/A',
+                    'employee_code' => $review->employee ? ($review->employee->employee_id ?? 'EMP-'.$review->employee->id) : '',
+                    'reviewer_name' => $review->reviewer ? ($review->reviewer->first_name . ' ' . $review->reviewer->last_name) : 'N/A',
+                    'review_type'   => $review->review_type,
+                    'period'        => $review->period,
+                    'rating'        => number_format($review->rating, 2),
+                    'review_date'   => \Carbon\Carbon::parse($review->review_date)->format('M d, Y'),
+                    'status'        => $review->status,
+                    'show_url'      => route('performance-reviews.show', $review->id),
+                    'edit_url'      => route('performance-reviews.edit', $review->id),
+                    'destroy_url'   => route('performance-reviews.destroy', $review->id),
+                ]
+            ]);
+        }
 
         return redirect()->route('performance-reviews.index')
             ->with('success', 'Performance review created successfully.');

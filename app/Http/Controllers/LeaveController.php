@@ -165,6 +165,8 @@ class LeaveController extends Controller
             ->take(5)
             ->get();
 
+        $employees = Employee::orderBy('first_name')->get();
+
         // Return view with all data
         return view('leaves.index', compact(
             'leaves',
@@ -173,7 +175,8 @@ class LeaveController extends Controller
             'approvedLeaves',
             'rejectedLeaves',
             'monthlyLeaves',
-            'recentLeaves'
+            'recentLeaves',
+            'employees'
         ));
     }
 
@@ -192,7 +195,7 @@ class LeaveController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
             'employee_id' => 'required|exists:employees,id',
             'leave_type'  => 'required|string|max:255',
             'start_date'  => 'required|date',
@@ -201,7 +204,36 @@ class LeaveController extends Controller
             'status'      => 'required|in:Pending,Approved,Rejected',
         ]);
 
-        Leave::create($validated);
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $leave = Leave::create($validator->validated());
+        $leave->load('employee');
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Leave request created successfully.',
+                'leave'   => [
+                    'id'            => $leave->id,
+                    'employee_name' => ($leave->employee->first_name ?? '') . ' ' . ($leave->employee->last_name ?? ''),
+                    'leave_type'    => $leave->leave_type,
+                    'start_date'    => $leave->start_date,
+                    'end_date'      => $leave->end_date,
+                    'reason'        => $leave->reason,
+                    'status'        => $leave->status,
+                    'show_url'      => route('leaves.show', $leave),
+                    'edit_url'      => route('leaves.edit', $leave),
+                    'destroy_url'   => route('leaves.destroy', $leave),
+                    'approve_url'   => route('leaves.approve', $leave),
+                    'reject_url'    => route('leaves.reject', $leave),
+                ]
+            ]);
+        }
 
         return redirect()
             ->route('leaves.index')

@@ -29,13 +29,36 @@ class HolidayController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'date' => 'required|date|unique:holidays,date',
             'type' => 'required|string|max:255',
         ]);
 
-        Holiday::create($validated);
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $holiday = Holiday::create($validator->validated());
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Holiday added successfully.',
+                'holiday' => [
+                    'id'             => $holiday->id,
+                    'name'           => $holiday->name,
+                    'date'           => $holiday->date,
+                    'formatted_date' => \Carbon\Carbon::parse($holiday->date)->format('F d, Y'),
+                    'type'           => $holiday->type,
+                    'edit_url'       => route('holidays.edit', $holiday->id),
+                    'destroy_url'    => route('holidays.destroy', $holiday->id),
+                ]
+            ]);
+        }
 
         return redirect()->route('holidays.index')
             ->with('success', 'Holiday added successfully.');

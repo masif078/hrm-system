@@ -4,61 +4,83 @@
 
 @section('content')
 
-<div class="container mt-4">
+<div class="container-fluid px-0">
 
-    <h2 class="mb-4">Add Department</h2>
+    {{-- Breadcrumbs --}}
+    <x-breadcrumb :items="[
+        ['label' => 'Dashboard', 'url' => '/dashboard'],
+        ['label' => 'Departments', 'url' => route('departments.index')],
+        ['label' => 'Add Department']
+    ]" />
 
-    <form action="{{ route('departments.store') }}" method="POST">
+    {{-- Centered Compact Form Card (Max-Width 600px) --}}
+    <div class="mx-auto" style="max-width: 600px;">
+        <div class="card border border-light-subtle shadow-sm rounded-4 bg-white p-4 p-md-5">
+            {{-- Header Title --}}
+            <div class="border-bottom border-light-subtle pb-3 mb-4">
+                <h4 class="fw-bold text-dark mb-1">Add Department</h4>
+                <p class="text-secondary small mb-0">Create a new organizational department record for employee allocations.</p>
+            </div>
 
-        @csrf
+            {{-- Form --}}
+            <form action="{{ route('departments.store') }}" method="POST">
+                @csrf
 
-        <div class="mb-3">
-            <label>Department Name</label>
+                {{-- Department Name --}}
+                <div class="mb-3.5">
+                    <label class="form-label small fw-semibold text-secondary mb-1">Department Name <span class="text-danger">*</span></label>
+                    <input
+                        type="text"
+                        name="name"
+                        class="form-control rounded-3 border-light-subtle shadow-2xs @error('name') is-invalid @enderror"
+                        placeholder="e.g. Human Resources"
+                        value="{{ old('name') }}"
+                        required>
+                    @error('name')
+                        <div class="invalid-feedback small">{{ $message }}</div>
+                    @enderror
+                </div>
 
-            <input
-                type="text"
-                name="name"
-                class="form-control"
-                value="{{ old('name') }}">
+                {{-- Department Code --}}
+                <div class="mb-3.5">
+                    <label class="form-label small fw-semibold text-secondary mb-1">Department Code <span class="text-danger">*</span></label>
+                    <input
+                        type="text"
+                        name="code"
+                        class="form-control rounded-3 border-light-subtle shadow-2xs @error('code') is-invalid @enderror"
+                        placeholder="e.g. HR-001"
+                        value="{{ old('code') }}"
+                        required>
+                    @error('code')
+                        <div class="invalid-feedback small">{{ $message }}</div>
+                    @enderror
+                </div>
 
-            @error('name')
-                <small class="text-danger">{{ $message }}</small>
-            @enderror
+                {{-- Description --}}
+                <div class="mb-4">
+                    <label class="form-label small fw-semibold text-secondary mb-1">Description</label>
+                    <textarea
+                        name="description"
+                        class="form-control rounded-3 border-light-subtle shadow-2xs @error('description') is-invalid @enderror"
+                        rows="4"
+                        placeholder="Provide a short summary of department responsibilities...">{{ old('description') }}</textarea>
+                    @error('description')
+                        <div class="invalid-feedback small">{{ $message }}</div>
+                    @enderror
+                </div>
+
+                {{-- Bottom Right Actions --}}
+                <div class="d-flex justify-content-end gap-2.5 pt-2 border-top border-light-subtle">
+                    <a href="{{ route('departments.index') }}" class="btn btn-outline-secondary fw-semibold px-4 py-2 rounded-3">
+                        Cancel
+                    </a>
+                    <button type="submit" class="btn btn-primary fw-bold px-4 py-2 rounded-3 text-white shadow-sm">
+                        Save Department
+                    </button>
+                </div>
+            </form>
         </div>
-
-        <div class="mb-3">
-            <label>Department Code</label>
-
-            <input
-                type="text"
-                name="code"
-                class="form-control"
-                value="{{ old('code') }}">
-
-            @error('code')
-                <small class="text-danger">{{ $message }}</small>
-            @enderror
-        </div>
-
-        <div class="mb-3">
-            <label>Description</label>
-
-            <textarea
-                name="description"
-                class="form-control"
-                rows="4">{{ old('description') }}</textarea>
-        </div>
-
-        <button class="btn btn-primary">
-            Save Department
-        </button>
-
-        <a href="{{ route('departments.index') }}"
-           class="btn btn-secondary">
-            Cancel
-        </a>
-
-    </form>
+    </div>
 
 </div>
 

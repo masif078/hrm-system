@@ -21,14 +21,38 @@ class CompanyPolicyController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'title' => 'required|string|max:255',
-            'type' => 'required|string|max:255',
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'title'   => 'required|string|max:255',
+            'type'    => 'required|string|max:255',
             'content' => 'required|string',
         ]);
 
-        $policy = CompanyPolicy::create($validated);
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $policy = CompanyPolicy::create($validator->validated());
         ActivityLog::log('Created Company Policy', "Policy: {$policy->title}");
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Company policy created successfully.',
+                'policy'  => [
+                    'id'          => $policy->id,
+                    'title'       => $policy->title,
+                    'type'        => $policy->type,
+                    'content'     => $policy->content,
+                    'excerpt'     => Str::limit($policy->content, 200),
+                    'edit_url'    => route('company-policies.edit', $policy->id),
+                    'update_url'  => route('company-policies.update', $policy->id),
+                    'destroy_url' => route('company-policies.destroy', $policy->id),
+                ]
+            ]);
+        }
 
         return redirect()->route('company-policies.index')->with('success', 'Company policy created successfully.');
     }
@@ -40,14 +64,38 @@ class CompanyPolicyController extends Controller
 
     public function update(Request $request, CompanyPolicy $companyPolicy)
     {
-        $validated = $request->validate([
-            'title' => 'required|string|max:255',
-            'type' => 'required|string|max:255',
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'title'   => 'required|string|max:255',
+            'type'    => 'required|string|max:255',
             'content' => 'required|string',
         ]);
 
-        $companyPolicy->update($validated);
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $companyPolicy->update($validator->validated());
         ActivityLog::log('Updated Company Policy', "Policy: {$companyPolicy->title}");
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Company policy updated successfully.',
+                'policy'  => [
+                    'id'          => $companyPolicy->id,
+                    'title'       => $companyPolicy->title,
+                    'type'        => $companyPolicy->type,
+                    'content'     => $companyPolicy->content,
+                    'excerpt'     => Str::limit($companyPolicy->content, 200),
+                    'edit_url'    => route('company-policies.edit', $companyPolicy->id),
+                    'update_url'  => route('company-policies.update', $companyPolicy->id),
+                    'destroy_url' => route('company-policies.destroy', $companyPolicy->id),
+                ]
+            ]);
+        }
 
         return redirect()->route('company-policies.index')->with('success', 'Company policy updated successfully.');
     }

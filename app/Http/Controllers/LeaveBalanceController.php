@@ -14,7 +14,9 @@ class LeaveBalanceController extends Controller
     public function index()
     {
         $balances = LeaveBalance::with('employee')->latest()->paginate(15);
-        return view('leave-balances.index', compact('balances'));
+        $employees = Employee::orderBy('first_name')->get();
+
+        return view('leave-balances.index', compact('balances', 'employees'));
     }
 
     /**
@@ -31,22 +33,60 @@ class LeaveBalanceController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
             'employee_id' => 'required|exists:employees,id',
-            'leave_type' => 'required|string|max:255',
-            'allocated' => 'required|integer|min:0',
+            'leave_type'  => 'required|string|max:255',
+            'allocated'   => 'required|integer|min:1',
+            'year'        => 'nullable|string|max:10',
         ]);
 
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
         // Check if balance for this employee and type already exists
-        $exists = LeaveBalance::where('employee_id', $validated['employee_id'])
-            ->where('leave_type', $validated['leave_type'])
+        $exists = LeaveBalance::where('employee_id', $request->employee_id)
+            ->where('leave_type', $request->leave_type)
             ->exists();
 
         if ($exists) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'errors'  => ['leave_type' => ['Leave balance of this type has already been allocated to this employee.']]
+                ], 422);
+            }
             return redirect()->back()->withErrors(['leave_type' => 'Leave balance of this type has already been allocated to this employee.']);
         }
 
-        LeaveBalance::create($validated);
+        $balance = LeaveBalance::create([
+            'employee_id' => $request->employee_id,
+            'leave_type'  => $request->leave_type,
+            'allocated'   => $request->allocated,
+            'used'        => 0,
+        ]);
+        $balance->load('employee');
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Leave balance allocated successfully.',
+                'balance' => [
+                    'id'            => $balance->id,
+                    'employee_name' => $balance->employee->first_name . ' ' . $balance->employee->last_name,
+                    'employee_code' => $balance->employee->employee_id ?? ('EMP-' . $balance->employee->id),
+                    'leave_type'    => $balance->leave_type,
+                    'allocated'     => $balance->allocated,
+                    'used'          => $balance->used,
+                    'remaining'     => $balance->allocated - $balance->used,
+                    'edit_url'      => route('leave-balances.edit', $balance->id),
+                    'destroy_url'   => route('leave-balances.destroy', $balance->id),
+                ]
+            ]);
+        }
 
         return redirect()->route('leave-balances.index')
             ->with('success', 'Leave balance allocated successfully.');

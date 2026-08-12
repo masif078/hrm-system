@@ -69,9 +69,10 @@ class TaskController extends Controller
             ->paginate(10)
             ->withQueryString();
 
-        $employees = Employee::all();
+        $employees = Employee::orderBy('first_name')->get();
+        $projects = Project::orderBy('project_name')->get();
 
-        return view('tasks.index', compact('tasks', 'employees'));
+        return view('tasks.index', compact('tasks', 'employees', 'projects'));
     }
 
     public function create()
@@ -84,7 +85,7 @@ class TaskController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
             'project_id'  => 'required|exists:projects,id',
             'employee_id' => 'nullable|exists:employees,id',
             'title'       => 'required|max:255',
@@ -94,10 +95,45 @@ class TaskController extends Controller
             'priority'    => 'required',
         ]);
 
-        $task = Task::create($request->all());
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $task = Task::create($validator->validated());
 
         if ($task->employee && $task->employee->user) {
             $task->employee->user->notify(new \App\Notifications\TaskAssignedNotification($task));
+        }
+
+        $task->load(['project', 'employee']);
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Task created successfully.',
+                'task'    => [
+                    'id'            => $task->id,
+                    'title'         => $task->title,
+                    'project_name'  => $task->project->project_name ?? 'N/A',
+                    'employee_name' => $task->employee ? ($task->employee->first_name . ' ' . $task->employee->last_name) : null,
+                    'priority'      => $task->priority,
+                    'status'        => $task->status,
+                    'due_date'      => date('Y-m-d', strtotime($task->due_date)),
+                    'is_overdue'    => \Carbon\Carbon::parse($task->due_date)->isPast() && $task->status !== 'Completed',
+                    'show_url'      => route('tasks.show', $task->id),
+                    'edit_url'      => route('tasks.edit', $task->id),
+                    'destroy_url'   => route('tasks.destroy', $task->id),
+                ],
+                'stats'   => [
+                    'total'       => Task::count(),
+                    'todo'        => Task::where('status', 'To Do')->count(),
+                    'completed'   => Task::where('status', 'Completed')->count(),
+                    'high_prio'   => Task::where('priority', 'High')->count(),
+                ]
+            ]);
         }
 
         return redirect()

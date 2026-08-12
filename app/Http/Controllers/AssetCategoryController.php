@@ -21,13 +21,35 @@ class AssetCategoryController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:asset_categories,name',
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'name'        => 'required|string|max:255|unique:asset_categories,name',
             'description' => 'nullable|string',
         ]);
 
-        $category = AssetCategory::create($validated);
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $category = AssetCategory::create($validator->validated());
         ActivityLog::log('Created Asset Category', "Category: {$category->name}");
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success'  => true,
+                'message'  => 'Asset category created successfully.',
+                'category' => [
+                    'id'          => $category->id,
+                    'name'        => $category->name,
+                    'description' => $category->description ?: 'No description',
+                    'created_at'  => $category->created_at ? $category->created_at->format('M d, Y') : date('M d, Y'),
+                    'edit_url'    => route('asset-categories.edit', $category->id),
+                    'destroy_url' => route('asset-categories.destroy', $category->id),
+                ]
+            ]);
+        }
 
         return redirect()->route('asset-categories.index')->with('success', 'Asset category created successfully.');
     }

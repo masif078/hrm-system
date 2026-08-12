@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Department;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class DepartmentController extends Controller
 {
@@ -30,7 +31,7 @@ class DepartmentController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
+        $validator = Validator::make($request->all(), [
             'name' => 'required|max:100|unique:departments,name|regex:/^[a-zA-Z0-9\s]+$/',
             'code' => 'required|max:50|unique:departments,code|regex:/^[a-zA-Z0-9\s]+$/',
             'description' => 'nullable',
@@ -39,11 +40,29 @@ class DepartmentController extends Controller
             'code.regex' => 'The code may only contain letters, numbers, and spaces.',
         ]);
 
-        Department::create([
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $department = Department::create([
             'name' => $request->name,
             'code' => $request->code,
             'description' => $request->description,
         ]);
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Department added successfully.',
+                'department' => $department
+            ]);
+        }
 
         return redirect()
             ->route('departments.index')
@@ -57,7 +76,7 @@ class DepartmentController extends Controller
 
     public function update(Request $request, Department $department)
     {
-        $request->validate([
+        $validator = Validator::make($request->all(), [
             'name' => 'required|max:100|unique:departments,name,' . $department->id . '|regex:/^[a-zA-Z0-9\s]+$/',
             'code' => 'required|max:50|unique:departments,code,' . $department->id . '|regex:/^[a-zA-Z0-9\s]+$/',
             'description' => 'nullable',
@@ -66,11 +85,29 @@ class DepartmentController extends Controller
             'code.regex' => 'The code may only contain letters, numbers, and spaces.',
         ]);
 
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
         $department->update([
             'name' => $request->name,
             'code' => $request->code,
             'description' => $request->description,
         ]);
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Department updated successfully.',
+                'department' => $department
+            ]);
+        }
 
         return redirect()
             ->route('departments.index')

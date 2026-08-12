@@ -14,7 +14,8 @@ class AssetController extends Controller
     public function index()
     {
         $assets = Asset::with('category')->latest()->get();
-        return view('assets.index', compact('assets'));
+        $categories = AssetCategory::orderBy('name')->get();
+        return view('assets.index', compact('assets', 'categories'));
     }
 
     public function create()
@@ -25,18 +26,47 @@ class AssetController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'name'              => 'required|string|max:255',
             'asset_category_id' => 'required|exists:asset_categories,id',
-            'serial_number' => 'required|string|max:255|unique:assets,serial_number',
-            'cost' => 'required|numeric|min:0',
-            'purchase_date' => 'required|date',
-            'warranty_expiry' => 'nullable|date|after_or_equal:purchase_date',
-            'status' => 'required|in:Available,Assigned,Maintenance,Lost',
+            'serial_number'     => 'required|string|max:255|unique:assets,serial_number',
+            'cost'              => 'required|numeric|min:0',
+            'purchase_date'     => 'required|date',
+            'warranty_expiry'   => 'nullable|date|after_or_equal:purchase_date',
+            'status'            => 'required|in:Available,Assigned,Maintenance,Lost',
         ]);
 
-        $asset = Asset::create($validated);
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $asset = Asset::create($validator->validated());
+        $asset->load('category');
         ActivityLog::log('Created Asset', "Asset: {$asset->name} (SN: {$asset->serial_number})");
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Asset created successfully.',
+                'asset'   => [
+                    'id'              => $asset->id,
+                    'name'            => $asset->name,
+                    'category_name'   => $asset->category->name ?? 'N/A',
+                    'serial_number'   => $asset->serial_number,
+                    'purchase_date'   => date('M d, Y', strtotime($asset->purchase_date)),
+                    'warranty_expiry' => $asset->warranty_expiry ? date('M d, Y', strtotime($asset->warranty_expiry)) : null,
+                    'is_expired'      => $asset->warranty_expiry ? (strtotime($asset->warranty_expiry) < time()) : false,
+                    'cost'            => number_format($asset->cost, 2),
+                    'status'          => $asset->status,
+                    'show_url'        => route('assets.show', $asset->id),
+                    'edit_url'        => route('assets.edit', $asset->id),
+                    'destroy_url'     => route('assets.destroy', $asset->id),
+                ]
+            ]);
+        }
 
         return redirect()->route('assets.index')->with('success', 'Asset created successfully.');
     }

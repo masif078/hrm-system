@@ -29,15 +29,39 @@ class ShiftController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'start_time' => 'required',
-            'end_time' => 'required',
-            'late_mark_after' => 'required',
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'name'                  => 'required|string|max:255',
+            'start_time'            => 'required',
+            'end_time'              => 'required',
+            'late_mark_after'       => 'required',
             'early_checkout_before' => 'required',
         ]);
 
-        Shift::create($validated);
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $shift = Shift::create($validator->validated());
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Shift created successfully.',
+                'shift'   => [
+                    'id'                              => $shift->id,
+                    'name'                            => $shift->name,
+                    'formatted_start_time'            => date('h:i A', strtotime($shift->start_time)),
+                    'formatted_end_time'              => date('h:i A', strtotime($shift->end_time)),
+                    'formatted_late_mark_after'       => date('h:i A', strtotime($shift->late_mark_after)),
+                    'formatted_early_checkout_before' => date('h:i A', strtotime($shift->early_checkout_before)),
+                    'edit_url'                        => route('shifts.edit', $shift->id),
+                    'destroy_url'                     => route('shifts.destroy', $shift->id),
+                ]
+            ]);
+        }
 
         return redirect()->route('shifts.index')
             ->with('success', 'Shift created successfully.');

@@ -13,6 +13,7 @@ class AppraisalController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
+        $designations = Designation::orderBy('title')->get();
         
         if ($user->role === 'admin') {
             $query = Appraisal::with(['employee', 'performanceReview', 'previousDesignation', 'newDesignation']);
@@ -25,8 +26,8 @@ class AppraisalController extends Controller
             }
 
             $appraisals = $query->latest()->paginate(10);
-            $employees = Employee::orderBy('first_name')->get();
-            return view('appraisals.index', compact('appraisals', 'employees'));
+            $employees = Employee::with('designation')->orderBy('first_name')->get();
+            return view('appraisals.index', compact('appraisals', 'employees', 'designations'));
         } else {
             $employee = $user->employee;
             if (!$employee) {
@@ -37,7 +38,8 @@ class AppraisalController extends Controller
                 ->where('employee_id', $employee->id)
                 ->latest()
                 ->paginate(10);
-            return view('appraisals.index', compact('appraisals'));
+            $employees = Employee::with('designation')->where('id', $employee->id)->get();
+            return view('appraisals.index', compact('appraisals', 'employees', 'designations'));
         }
     }
 
@@ -51,23 +53,60 @@ class AppraisalController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'employee_id' => 'required|exists:employees,id',
-            'performance_review_id' => 'nullable|exists:performance_reviews,id',
-            'rating_class' => 'required|string|max:255',
-            'action_type' => 'required|in:Increment,Promotion,Both,None',
-            'previous_salary' => 'required|numeric|min:0',
-            'new_salary' => 'required|numeric|min:0',
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'employee_id'             => 'required|exists:employees,id',
+            'performance_review_id'   => 'nullable|exists:performance_reviews,id',
+            'rating_class'            => 'nullable|string|max:255',
+            'action_type'             => 'required|in:Increment,Promotion,Both,None',
+            'previous_salary'         => 'required|numeric|min:0',
+            'new_salary'              => 'required|numeric|min:0',
             'previous_designation_id' => 'nullable|exists:designations,id',
-            'new_designation_id' => 'nullable|exists:designations,id',
-            'effective_date' => 'required|date',
-            'status' => 'required|in:Draft,Approved,Rejected',
+            'new_designation_id'      => 'nullable|exists:designations,id',
+            'effective_date'          => 'required|date',
+            'status'                  => 'required|in:Draft,Approved,Rejected',
         ]);
+
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $validated = $validator->validated();
+
+        if (empty($validated['rating_class'])) {
+            $validated['rating_class'] = 'Exceeds Expectations';
+        }
 
         $appraisal = Appraisal::create($validated);
 
         if ($appraisal->status === 'Approved') {
             $this->applyAppraisalEffects($appraisal);
+        }
+
+        $appraisal->load(['employee', 'previousDesignation', 'newDesignation']);
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success'   => true,
+                'message'   => 'Salary/Promotion Appraisal submitted successfully.',
+                'appraisal' => [
+                    'id'                   => $appraisal->id,
+                    'employee_name'        => $appraisal->employee ? ($appraisal->employee->first_name . ' ' . $appraisal->employee->last_name) : 'N/A',
+                    'employee_code'        => $appraisal->employee ? ($appraisal->employee->employee_id ?? 'EMP-'.$appraisal->employee->id) : '',
+                    'rating_class'         => $appraisal->rating_class,
+                    'action_type'          => $appraisal->action_type,
+                    'previous_salary'      => number_format($appraisal->previous_salary, 2),
+                    'new_salary'           => number_format($appraisal->new_salary, 2),
+                    'previous_designation' => $appraisal->previousDesignation?->title ?? $appraisal->previousDesignation?->name ?? '-',
+                    'new_designation'      => $appraisal->newDesignation?->title ?? $appraisal->newDesignation?->name ?? 'None',
+                    'effective_date'       => \Carbon\Carbon::parse($appraisal->effective_date)->format('M d, Y'),
+                    'status'               => $appraisal->status,
+                    'edit_url'             => route('appraisals.edit', $appraisal->id),
+                    'destroy_url'          => route('appraisals.destroy', $appraisal->id),
+                ]
+            ]);
         }
 
         return redirect()->route('appraisals.index')

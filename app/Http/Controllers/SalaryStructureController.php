@@ -24,8 +24,9 @@ class SalaryStructureController extends Controller
         }
 
         $salaryStructures = $query->latest()->paginate(10);
+        $employees = Employee::where('status', 'active')->orderBy('first_name')->get();
 
-        return view('salary-structures.index', compact('salaryStructures'));
+        return view('salary-structures.index', compact('salaryStructures', 'employees'));
     }
 
     /**
@@ -42,19 +43,28 @@ class SalaryStructureController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'employee_id' => 'required|exists:employees,id',
-            'basic_salary' => 'required|numeric|min:0',
-            'house_allowance' => 'nullable|numeric|min:0',
-            'medical_allowance' => 'nullable|numeric|min:0',
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'employee_id'         => 'required|exists:employees,id',
+            'basic_salary'        => 'required|numeric|min:0',
+            'house_allowance'     => 'nullable|numeric|min:0',
+            'medical_allowance'   => 'nullable|numeric|min:0',
             'transport_allowance' => 'nullable|numeric|min:0',
-            'other_allowance' => 'nullable|numeric|min:0',
-            'tax' => 'nullable|numeric|min:0',
-            'provident_fund' => 'nullable|numeric|min:0',
-            'other_deduction' => 'nullable|numeric|min:0',
-            'effective_from' => 'required|date',
-            'status' => 'required|in:active,inactive',
+            'other_allowance'     => 'nullable|numeric|min:0',
+            'tax'                 => 'nullable|numeric|min:0',
+            'provident_fund'      => 'nullable|numeric|min:0',
+            'other_deduction'     => 'nullable|numeric|min:0',
+            'effective_from'      => 'required|date',
+            'status'              => 'required|in:active,inactive',
         ]);
+
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
+
+        $validated = $validator->validated();
 
         // Default nulls to 0
         $basic = floatval($validated['basic_salary']);
@@ -74,6 +84,9 @@ class SalaryStructureController extends Controller
         $net = $gross - $deductions;
 
         if ($net < 0) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => ['basic_salary' => ['Net salary cannot be negative. Please adjust allowances and deductions.']]], 422);
+            }
             return back()->withErrors(['basic_salary' => 'Net salary cannot be negative. Please adjust allowances and deductions.'])->withInput();
         }
 
@@ -85,7 +98,28 @@ class SalaryStructureController extends Controller
                 ->update(['status' => 'inactive']);
         }
 
-        SalaryStructure::create($validated);
+        $salaryStructure = SalaryStructure::create($validated);
+        $salaryStructure->load('employee.department', 'employee.designation');
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success'          => true,
+                'message'          => 'Salary Structure created successfully.',
+                'salary_structure' => [
+                    'id'                => $salaryStructure->id,
+                    'employee_name'     => $salaryStructure->employee->first_name . ' ' . $salaryStructure->employee->last_name,
+                    'department_name'   => $salaryStructure->employee->department?->name ?? 'N/A',
+                    'designation_title' => $salaryStructure->employee->designation?->title ?? 'N/A',
+                    'basic_salary'      => number_format($salaryStructure->basic_salary, 2),
+                    'net_salary'        => number_format($salaryStructure->net_salary, 2),
+                    'effective_from'    => $salaryStructure->effective_from,
+                    'status'            => $salaryStructure->status,
+                    'show_url'          => route('salary-structures.show', $salaryStructure->id),
+                    'edit_url'          => route('salary-structures.edit', $salaryStructure->id),
+                    'destroy_url'       => route('salary-structures.destroy', $salaryStructure->id),
+                ]
+            ]);
+        }
 
         return redirect()->route('salary-structures.index')
             ->with('success', 'Salary Structure created successfully.');

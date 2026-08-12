@@ -18,7 +18,10 @@ class ApplicationController extends Controller
     public function index()
     {
         $applications = Application::with(['candidate', 'jobOpening.department'])->latest()->get();
-        return view('applications.index', compact('applications'));
+        $candidates = Candidate::orderBy('full_name')->get();
+        $jobs = JobOpening::with('department')->latest()->get();
+        $departments = Department::orderBy('name')->get();
+        return view('applications.index', compact('applications', 'candidates', 'jobs', 'departments'));
     }
 
     public function create()
@@ -30,18 +33,48 @@ class ApplicationController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'candidate_id' => 'required|exists:candidates,id',
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'candidate_id'   => 'required|exists:candidates,id',
             'job_opening_id' => 'required|exists:job_openings,id',
-            'status' => 'required|in:Applied,Shortlisted,HR Interview,Technical Interview,Final Interview,Offer Sent,Accepted,Rejected,Hired',
+            'status'         => 'required|in:Applied,Shortlisted,HR Interview,Technical Interview,Final Interview,Offer Sent,Accepted,Rejected,Hired',
+            'applied_date'   => 'nullable|date',
         ]);
 
-        $app = Application::create($validated);
+        if ($validator->fails()) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            }
+            return redirect()->back()->withErrors($validator)->withInput();
+        }
 
-        // Sync candidate status
+        $validated = $validator->validated();
+
+        if (!empty($validated['applied_date'])) {
+            $validated['created_at'] = $validated['applied_date'] . ' ' . date('H:i:s');
+        }
+
+        $app = Application::create($validated);
         $app->candidate->update(['status' => $request->status]);
+        $app->load(['candidate', 'jobOpening.department']);
 
         ActivityLog::log('Created Job Application', "Candidate ID: {$request->candidate_id} for Job ID: {$request->job_opening_id}");
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success'     => true,
+                'message'     => 'Job application submitted successfully.',
+                'application' => [
+                    'id'              => $app->id,
+                    'candidate_name'  => $app->candidate->full_name ?? 'N/A',
+                    'candidate_email' => $app->candidate->email ?? '',
+                    'job_title'       => $app->jobOpening->title ?? 'N/A',
+                    'department_name' => $app->jobOpening->department->name ?? 'N/A',
+                    'applied_date'    => \Carbon\Carbon::parse($app->created_at)->format('M d, Y'),
+                    'status'          => $app->status,
+                    'show_url'        => route('applications.show', $app->id),
+                ]
+            ]);
+        }
 
         return redirect()->route('applications.index')->with('success', 'Application registered successfully.');
     }
