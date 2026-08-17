@@ -24,6 +24,9 @@ class AssetCategoryController extends Controller
         $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
             'name'        => 'required|string|max:255|unique:asset_categories,name',
             'description' => 'nullable|string',
+        ], [
+            'name.unique'   => "Category '{$request->name}' already exists.",
+            'name.required' => 'Category name is required.',
         ]);
 
         if ($validator->fails()) {

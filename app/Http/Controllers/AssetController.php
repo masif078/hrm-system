@@ -26,6 +26,10 @@ class AssetController extends Controller
 
     public function store(Request $request)
     {
+        if ($request->has('warranty_expiry') && empty($request->warranty_expiry)) {
+            $request->merge(['warranty_expiry' => null]);
+        }
+
         $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
             'name'              => 'required|string|max:255',
             'asset_category_id' => 'required|exists:asset_categories,id',
@@ -34,6 +38,9 @@ class AssetController extends Controller
             'purchase_date'     => 'required|date',
             'warranty_expiry'   => 'nullable|date|after_or_equal:purchase_date',
             'status'            => 'required|in:Available,Assigned,Maintenance,Lost',
+        ], [
+            'serial_number.unique'        => 'The Serial / Asset ID has already been registered in the system.',
+            'warranty_expiry.after_or_equal' => 'The Warranty Expiry date must be equal to or after the Purchase Date.',
         ]);
 
         if ($validator->fails()) {

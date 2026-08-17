@@ -168,24 +168,26 @@ document.addEventListener('DOMContentLoaded', function () {
             modalCategoryErrors.innerHTML = '';
 
             const formData = new FormData(createCategoryForm);
+            const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+            const csrfInput = createCategoryForm.querySelector('input[name="_token"]');
+            const token = csrfMeta ? csrfMeta.getAttribute('content') : (csrfInput ? csrfInput.value : '');
 
             fetch("{{ route('asset-categories.store') }}", {
                 method: "POST",
                 headers: {
+                    "Accept": "application/json",
                     "X-Requested-With": "XMLHttpRequest",
-                    "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    "X-CSRF-TOKEN": token
                 },
                 body: formData
             })
-            .then(response => response.json())
-            .then(data => {
-                saveCategoryBtn.disabled = false;
-                saveCategoryBtn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Save Category';
+            .then(async response => {
+                const data = await response.json().catch(() => ({}));
 
-                if (data.success) {
-                    // Close Modal
+                if (response.ok && data.success) {
+                    // Close Modal reliably using getOrCreateInstance
                     const modalEl = document.getElementById('createCategoryModal');
-                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                    const modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
                     if (modalInstance) {
                         modalInstance.hide();
                     }
@@ -201,7 +203,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     // Prepend new row
                     const c = data.category;
-                    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                    const csrfToken = token;
 
                     const newRow = document.createElement('tr');
                     newRow.className = 'hover-row';
@@ -246,6 +248,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         });
                     } else if (data.message) {
                         errHtml += `<li>${data.message}</li>`;
+                    } else {
+                        errHtml += '<li>An error occurred while saving the category. Please try again.</li>';
                     }
                     errHtml += '</ul>';
                     modalCategoryErrors.innerHTML = errHtml;
@@ -253,10 +257,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             })
             .catch(error => {
-                saveCategoryBtn.disabled = false;
-                saveCategoryBtn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Save Category';
                 modalCategoryErrors.innerHTML = 'An unexpected error occurred. Please try again.';
                 modalCategoryErrors.classList.remove('d-none');
+            })
+            .finally(() => {
+                saveCategoryBtn.disabled = false;
+                saveCategoryBtn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Save Category';
             });
         });
     }

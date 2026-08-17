@@ -395,6 +395,29 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    function removeBackdrops() {
+        document.querySelectorAll('.offcanvas-backdrop, .modal-backdrop').forEach(el => el.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+        document.body.removeAttribute('data-bs-overflow');
+        document.body.removeAttribute('data-bs-padding-right');
+    }
+
+    const addAssetDrawerEl = document.getElementById('addAssetDrawer');
+    if (addAssetDrawerEl) {
+        addAssetDrawerEl.addEventListener('hidden.bs.offcanvas', function () {
+            removeBackdrops();
+        });
+    }
+
+    const viewAssetModalEl = document.getElementById('viewAssetModal');
+    if (viewAssetModalEl) {
+        viewAssetModalEl.addEventListener('hidden.bs.modal', function () {
+            removeBackdrops();
+        });
+    }
+
     if (addAssetForm) {
         addAssetForm.addEventListener('submit', function (e) {
             e.preventDefault();
@@ -409,23 +432,25 @@ document.addEventListener('DOMContentLoaded', function () {
             fetch("{{ route('assets.store') }}", {
                 method: "POST",
                 headers: {
+                    "Accept": "application/json",
                     "X-Requested-With": "XMLHttpRequest",
                     "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]').getAttribute('content')
                 },
                 body: formData
             })
-            .then(response => response.json())
-            .then(data => {
+            .then(async response => {
+                const data = await response.json().catch(() => ({}));
                 saveAssetBtn.disabled = false;
                 saveAssetBtn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Save Asset';
 
-                if (data.success) {
-                    // Close Offcanvas Drawer
+                if (response.ok && data.success) {
+                    // Close Offcanvas Drawer using getOrCreateInstance & trigger backdrop cleanup
                     const drawerEl = document.getElementById('addAssetDrawer');
-                    const drawerInstance = bootstrap.Offcanvas.getInstance(drawerEl);
+                    const drawerInstance = bootstrap.Offcanvas.getOrCreateInstance(drawerEl);
                     if (drawerInstance) {
                         drawerInstance.hide();
                     }
+                    setTimeout(removeBackdrops, 200);
 
                     // Reset Form
                     addAssetForm.reset();
@@ -529,10 +554,18 @@ document.addEventListener('DOMContentLoaded', function () {
                         });
                     } else if (data.message) {
                         errHtml += `<li>${data.message}</li>`;
+                    } else {
+                        errHtml += '<li>An error occurred while saving the asset. Please verify inputs and try again.</li>';
                     }
                     errHtml += '</ul>';
                     drawerAssetErrors.innerHTML = errHtml;
                     drawerAssetErrors.classList.remove('d-none');
+
+                    // Scroll offcanvas drawer body to top so error message is immediately visible
+                    const drawerBody = document.querySelector('#addAssetDrawer .offcanvas-body');
+                    if (drawerBody) {
+                        drawerBody.scrollTop = 0;
+                    }
                 }
             })
             .catch(error => {
@@ -540,6 +573,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 saveAssetBtn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Save Asset';
                 drawerAssetErrors.innerHTML = 'An unexpected error occurred. Please try again.';
                 drawerAssetErrors.classList.remove('d-none');
+
+                const drawerBody = document.querySelector('#addAssetDrawer .offcanvas-body');
+                if (drawerBody) {
+                    drawerBody.scrollTop = 0;
+                }
             });
         });
     }

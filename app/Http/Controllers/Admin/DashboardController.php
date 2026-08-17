@@ -8,6 +8,7 @@ use App\Models\Department;
 use App\Models\Designation;
 use App\Models\Leave;
 use App\Models\Project;
+use App\Models\User;
 
 class DashboardController extends Controller
 {
@@ -53,6 +54,14 @@ class DashboardController extends Controller
             'interviewsTodayCount' => $interviewsTodayCount,
             'offersPendingCount' => $offersPendingCount,
             'newHiresCount' => $newHiresCount,
+            'recentTasks' => \App\Models\Task::with('employee')->latest()->take(5)->get(),
+            'recentEmployees' => Employee::with('department')->latest()->take(5)->get(),
+            'departments' => Department::orderBy('name')->get(),
+            'designations' => Designation::orderBy('title')->get(),
+            'branches' => \App\Models\Branch::orderBy('name')->get(),
+            'users' => User::orderBy('name')->get(),
+            'projects' => Project::orderBy('project_name')->get(),
+            'clients' => \App\Models\Client::orderBy('company_name')->get(),
         ]);
     }
 }
